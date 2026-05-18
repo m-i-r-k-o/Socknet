@@ -1,8 +1,10 @@
 #include "socknet.h"
 
+#include <stddef.h>
 #include <errno.h>
 #include <string.h>
 
+#include <pthread.h>
 #include <poll.h>
 #include <unistd.h>
 #include <sys/socket.h>
@@ -16,6 +18,23 @@
  * @brief Tempo di attesa della poll
  */
 #define SOCKNET_POLL_WAIT 100
+
+#define socknet_containerof(ptr,type,member) ((type*)((uint8_t*)(ptr) - offsetof(type, member)))
+
+typedef struct {
+    pthread_mutex_t lock;
+    size_t size;
+    uint8_t shared[];
+} socknet_shared_header;
+
+struct socknet_server {
+    int fd; /**< File descriptor del server */
+    size_t nclients; /**< Grandezza della coda di clients */
+    socknet_shared_header *header;
+    pid_t *pidvec; /**< Vettore di pid dei processi per gestire i client */
+    size_t pidcnt; /**< Numero di porocessi aperti */
+    size_t pidsiz; /**< Grandezza allocata del vettore di pid */
+};
 
 /**
  * @brief Permette di fare bind ad un server inserendo un tipo di IP diretto
@@ -115,7 +134,7 @@ static size_t socknet_round_size(size_t size) {
  * @param pid Codice del processo da inserire nella lista
  * @return Codice di ritorno
  */
-static int socknet_put_pid(socknet_server server, pid_t pid) {
+static int socknet_put_pid(socknet_server *server, pid_t pid) {
     /** Nel caso la lista sia piena riallochiamola */
     if(server->pidcnt >= server->pidsiz) {
         /** Ingrandisco la grandezza massima */
@@ -153,10 +172,16 @@ static int socknet_put_pid(socknet_server server, pid_t pid) {
     return SOCKNET_OK;
 }
 
-int socknet_create(socknet_server server, size_t nclients, const char *ip, int port) {
+socknet_server *socknet_create(size_t nclients, const char *ip, int port) {
+    socknet_server *server = SOCKNET_MALLOC(sizeof(socknet_server));
+    if(!server) return NULL;
+
     /** Creo un nuovo socket */
     int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if(fd < 0) return SOCKNET_NO;
+    if(fd < 0) {
+        SOCKNET_FREE(server);
+        return NULL;
+    }
 
     /** Se non e' specificato un IP accetto ogni indirizzo */
     int res = SOCKNET_OK;
@@ -165,30 +190,40 @@ int socknet_create(socknet_server server, size_t nclients, const char *ip, int p
 
     /** In caso di errore chiudo il socket e mando un codice negativo */
     if(res == SOCKNET_NO) {
+        SOCKNET_FREE(server);
         close(fd);
-        return SOCKNET_NO;
+        return NULL;
     }
 
     /** Metto il server in ascolto */
     if(listen(fd, (int)(nclients)) < 0) {
+        SOCKNET_FREE(server);
         close(fd);
-        return SOCKNET_NO;
+        return NULL;
     }
 
     /** Inizializzo i dati del server */
     server->fd = fd;
     server->nclients = nclients;
-
+    server->header = NULL;
     server->pidvec = NULL;
     server->pidcnt = 0;
     server->pidsiz = 0;
 
-    return SOCKNET_OK;
+    return server;
 }
 
-void socknet_close(socknet_server server) {
+void socknet_close(socknet_server *server) {
     /** Chiudo il socket */
     close(server->fd);
+
+    if(server->header) {
+        size_t total = (
+            sizeof(socknet_shared_header) +
+            server->header->size
+        );
+        munmap(server->header, total);
+    }
 
     /** Se ci sono processi aperti li chiudo */
     if(server->pidvec) {
@@ -204,9 +239,61 @@ void socknet_close(socknet_server server) {
         /** Libero la memoria del vettore di processi */
         SOCKNET_FREE(server->pidvec);
     }
+
+    SOCKNET_FREE(server);
 }
 
-int socknet_accept(socknet_server server, socknet_callback callback) {
+int socknet_shared(socknet_server *server, size_t size) {
+    size_t total = sizeof(socknet_shared_header) + size;
+
+    int prot = PROT_READ | PROT_WRITE;
+    int flags = MAP_ANONYMOUS | MAP_SHARED;
+
+    void *map = mmap(NULL, total, prot, flags, -1, 0);
+    if(map == MAP_FAILED) return SOCKNET_NO;
+
+    socknet_shared_header *header = map;
+    header->size = size;
+
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+    
+    if (pthread_mutex_init(&header->lock, &attr) != 0) {
+        munmap(map, total);
+        return SOCKNET_NO;
+    }
+    pthread_mutexattr_destroy(&attr);
+
+    if(server->header) {
+        total = (
+            sizeof(socknet_shared_header) +
+            server->header->size
+        );
+        munmap(server->header, total);
+    }
+
+    server->header = header;
+    return SOCKNET_OK;
+}
+
+void *socknet_struct(socknet_server *server) {
+    return server->header->shared;
+}
+
+void socknet_lock(void *shared) {
+    socknet_shared_header *header = NULL;
+    header = socknet_containerof(shared, socknet_shared_header, shared);
+    pthread_mutex_lock(&header->lock);
+}
+
+void socknet_unlock(void *shared) {
+    socknet_shared_header *header = NULL;
+    header = socknet_containerof(shared, socknet_shared_header, shared);
+    pthread_mutex_unlock(&header->lock);
+}
+
+int socknet_accept(socknet_server *server, socknet_callback callback) {
     /** Creo una poll per gestire il tempo di block di accept */
     struct pollfd pfd;
     pfd.fd = server->fd;
@@ -262,7 +349,7 @@ int socknet_accept(socknet_server server, socknet_callback callback) {
         }
 
         /** Eseguo le operazioni di comunicazione con il client */
-        int res = callback(client, ip, (int)(ntohs(addr.sin_port)), NULL);
+        int res = callback(client, ip, (int)(ntohs(addr.sin_port)), server->header->shared);
         fclose(client); /** Chiudo il socket */
 
         /** Chiudo il processo con uno stato positivo o negativo in base all'operazione */

@@ -55,14 +55,7 @@ typedef int (*socknet_callback)(FILE *socket, const char *ip, int port, void *ar
 /**
  * @brief Struttura del server
  */
-typedef struct {
-    int fd; /**< File descriptor del server */
-    size_t nclients; /**< Grandezza della coda di clients */
-
-    pid_t *pidvec; /**< Vettore di pid dei processi per gestire i client */
-    size_t pidcnt; /**< Numero di porocessi aperti */
-    size_t pidsiz; /**< Grandezza allocata del vettore di pid */
-} socknet_server[1];
+typedef struct socknet_server socknet_server;
 
 /**
  * @brief Inizializza la struttura server
@@ -72,13 +65,21 @@ typedef struct {
  * @param port Porta del server
  * @return Codice di ritorno
  */
-int socknet_create(socknet_server server, size_t nclients, const char *ip, int port);
+socknet_server *socknet_create(size_t nclients, const char *ip, int port);
 
 /**
  * @brief Chiude la struttura server
  * @param server Server da chiudere
  */
-void socknet_close(socknet_server server);
+void socknet_close(socknet_server *server);
+
+int socknet_shared(socknet_server *server, size_t size);
+
+void *socknet_struct(socknet_server *server);
+
+void socknet_lock(void *shared);
+
+void socknet_unlock(void *shared);
 
 /**
  * @brief Fa accettare ad un server un client creando un nuovo processo per gestirlo
@@ -86,7 +87,7 @@ void socknet_close(socknet_server server);
  * @param callback Funzione per comunicare con il client, riceve la struttura condivisa
  * @return Codice di ritorno
  */
-int socknet_accept(socknet_server server, socknet_callback callback);
+int socknet_accept(socknet_server *server, socknet_callback callback);
 
 /**
  * @brief Permette di connettersi ad un server
