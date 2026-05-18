@@ -37,6 +37,28 @@ struct socknet_server {
 };
 
 /**
+ * @brief Socket unico per ogni processo figlio (client)
+ */
+static FILE *child_client_socket = NULL;
+
+/**
+ * @brief Funzione per terminare il client alla chiusura del server
+ * @param sig Numero signal che dovrebbe essere SIGTERM
+ */
+static void socknet_sigterm_client(int sig) {
+    (void)(sig);
+
+    /** Se il socket de client e' valido invia gli ultimi dati e chiudilo */
+    if(child_client_socket) {
+        shutdown(fileno(child_client_socket), SHUT_WR);
+        fclose(child_client_socket);
+    }
+
+    /** Esco dal processo */
+    _exit(EXIT_SUCCESS);
+}
+
+/**
  * @brief Permette di fare bind ad un server inserendo un tipo di IP diretto
  * @param fd File descriptor del server
  * @param port Porta del server
@@ -230,7 +252,7 @@ void socknet_close(socknet_server *server) {
         for(size_t n = 0; n < server->pidcnt; n++) {
             /** Se il processo non e' valido saltalo */
             if(server->pidvec[n] <= 0) continue;
-            
+
             /** Chiedo al processo di chiudersi e lo aspetto */
             kill(server->pidvec[n], SIGTERM);
             waitpid(server->pidvec[n], NULL, 0);
@@ -348,8 +370,21 @@ int socknet_accept(socknet_server *server, socknet_callback callback) {
             _exit(EXIT_FAILURE);
         }
 
+        /** Salvo il socket nella variabile globale del processo */
+        child_client_socket = client;
+
+        /** Inserisco che alla richiesta di chiusura del server termina il socknet del client */
+        struct sigaction sa;
+        sa.sa_handler = socknet_sigterm_client;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        sigaction(SIGTERM, &sa, NULL);
+
         /** Eseguo le operazioni di comunicazione con il client */
         int res = callback(client, ip, (int)(ntohs(addr.sin_port)), server->header->shared);
+
+        /** Invio gli ultimi dati del socket */
+        shutdown(fileno(client), SHUT_WR);
         fclose(client); /** Chiudo il socket */
 
         /** Chiudo il processo con uno stato positivo o negativo in base all'operazione */
