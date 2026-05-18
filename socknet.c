@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <string.h>
 
+#include <poll.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -12,11 +13,16 @@
 #include <sys/mman.h>
 
 /**
+ * @brief Tempo di attesa della poll
+ */
+#define SOCKNET_POLL_WAIT 100
+
+/**
  * @brief Permette di fare bind ad un server inserendo un tipo di IP diretto
  * @param fd File descriptor del server
  * @param port Porta del server
  * @param type Tipo di IP del server
- * @return Codice di errore
+ * @return Codice di ritorno
  */
 static int socknet_direct_bind(int fd, int port, in_addr_t type) {
     /** Creo la struttura dell'indirizzo */
@@ -27,11 +33,9 @@ static int socknet_direct_bind(int fd, int port, in_addr_t type) {
 
     /** Eseguo il bind con l'indirizzo precedentemente creato */
     if(bind(fd, (void*)(&addr), sizeof(addr)) < 0) {
-        /** In caso di fallimento codice negativo */
         return SOCKNET_NO;
     }
 
-    /** Tutto ok: codice positivo */
     return SOCKNET_OK;
 }
 
@@ -40,7 +44,7 @@ static int socknet_direct_bind(int fd, int port, in_addr_t type) {
  * @param fd File descriptor del server
  * @param ip IP del server
  * @param port Porta del server
- * @return Codice di errore
+ * @return Codice di ritorno
  */
 static int socknet_ip_bind(int fd, const char *ip, int port) {
     /** Creo la struttura dell'indirizzo */
@@ -50,17 +54,14 @@ static int socknet_ip_bind(int fd, const char *ip, int port) {
 
     /** Inserisco l'IP del server */
     if(inet_pton(AF_INET, ip, &addr.sin_addr) <= 0) {
-        /** In caso di errore codice negativo */
         return SOCKNET_NO;
     }
 
     /** Eseguo il bind con l'indirizzo precedentemente creato */
     if(bind(fd, (void*)(&addr), sizeof(addr)) < 0) {
-        /** In caso di errore codice negativo */
         return SOCKNET_NO;
     }
 
-    /** Tutto ok: codice positivo */
     return SOCKNET_OK;
 }
 
@@ -69,7 +70,7 @@ static int socknet_ip_bind(int fd, const char *ip, int port) {
  * @param fd File descriptor del client
  * @param ip IP del server
  * @param port Porta del server
- * @return Codice di errore
+ * @return Codice di ritorno
  */
 static int socknet_ip_connect(int fd, const char *ip, int port) {
     /** Creo la struttura dell'indirizzo */
@@ -79,17 +80,14 @@ static int socknet_ip_connect(int fd, const char *ip, int port) {
 
     /** Inserisco l'IP del server */
     if(inet_pton(AF_INET, ip, &addr.sin_addr) <= 0) {
-        /** In caso di errore codice negativo */
         return SOCKNET_NO;
     }
 
     /** Connetto il client all'indirizzo del server */
     if(connect(fd, (void*)(&addr), sizeof(addr)) < 0) {
-        /** In caso di errore codice negativo */
         return SOCKNET_NO;
     }
 
-    /** Tutto ok: codice positivo */
     return SOCKNET_OK;
 }
 
@@ -115,7 +113,7 @@ static size_t socknet_round_size(size_t size) {
  * @brief Inserisce nella lista dei processi del server un pid
  * @param server Server possessore della lista
  * @param pid Codice del processo da inserire nella lista
- * @return Codice di errore
+ * @return Codice di ritorno
  */
 static int socknet_put_pid(socknet_server server, pid_t pid) {
     /** Nel caso la lista sia piena riallochiamola */
@@ -173,7 +171,6 @@ int socknet_create(socknet_server server, size_t nclients, const char *ip, int p
 
     /** Metto il server in ascolto */
     if(listen(fd, (int)(nclients)) < 0) {
-        /** In caso di errore codice negativo */
         close(fd);
         return SOCKNET_NO;
     }
@@ -186,7 +183,6 @@ int socknet_create(socknet_server server, size_t nclients, const char *ip, int p
     server->pidcnt = 0;
     server->pidsiz = 0;
 
-    /** Tutto ok: codice positivo */
     return SOCKNET_OK;
 }
 
@@ -205,12 +201,27 @@ void socknet_close(socknet_server server) {
             waitpid(server->pidvec[n], NULL, 0);
         }
         
-        /** libero la memoria del vattore di processi */
+        /** Libero la memoria del vettore di processi */
         SOCKNET_FREE(server->pidvec);
     }
 }
 
 int socknet_accept(socknet_server server, socknet_callback callback) {
+    /** Creo una poll per gestire il tempo di block di accept */
+    struct pollfd pfd;
+    pfd.fd = server->fd;
+    pfd.events = POLLIN;
+
+    /** Controllo se un client vuole connettersi */
+    int res = poll(&pfd, 1, 100);
+    if(res == 0) return SOCKNET_OK;
+
+    /** Errore della poll */
+    if(res < 0) {
+        if(errno == EINTR) return SOCKNET_OK;
+        return SOCKNET_NO;
+    }
+
     /** Creo la struttura di indirizzo per il client */
     struct sockaddr_in addr;
     socklen_t len = sizeof(addr);
@@ -254,7 +265,7 @@ int socknet_accept(socknet_server server, socknet_callback callback) {
         int res = callback(client, ip, (int)(ntohs(addr.sin_port)), NULL);
         fclose(client); /** Chiudo il socket */
 
-        /** Chiudo il rocesso con uno stato positivo o negativo in base all'operazione */
+        /** Chiudo il processo con uno stato positivo o negativo in base all'operazione */
         int status = EXIT_SUCCESS;
         if(res == SOCKNET_NO) status = EXIT_FAILURE;
         _exit(status);
@@ -272,7 +283,7 @@ int socknet_accept(socknet_server server, socknet_callback callback) {
 }
 
 int socknet_connect(const char *ip, int port, socknet_callback callback, void *user) {
-    /** Creo il socket del server, in caso di errore codice negativo */
+    /** Creo il socket del server */
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if(fd < 0) return SOCKNET_NO;
 
@@ -292,7 +303,6 @@ int socknet_connect(const char *ip, int port, socknet_callback callback, void *u
 
     /** Rimuovo il buffering del file per evitare problemi con l'invio dei dati */
     if(setvbuf(server, NULL, _IONBF, 0) != 0) {
-        /** In caso di errore chiudo il socket e termino il processo */
         fclose(server);
         return SOCKNET_NO;
     }

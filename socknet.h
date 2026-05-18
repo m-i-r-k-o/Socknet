@@ -1,6 +1,6 @@
 /**
  * @file socknet.h
- * @brief Libreria per gestione socket
+ * @brief Libreria per gestione socket client-server
  * @author Vitolo Mirko
  * @date 2026-05-11
  */
