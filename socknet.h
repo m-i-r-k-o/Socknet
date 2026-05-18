@@ -43,6 +43,39 @@
 #endif
 
 /**
+ * @brief Trasforma un numero di 8, 16, 32, 64 bit in big endian
+ * @param n Numero da trasfromare
+ * @return Numero trasformato in big endian
+ */
+#define socknet_host2net(n) \
+    !socknet_islittleen() ? (n) : \
+    (sizeof(n) == 1) ? (n) : \
+    (sizeof(n) == 2) ? (((n) >> 8) | ((n) << 8)) : \
+    (sizeof(n) == 4) ? ( \
+        (((n) >> 24) & 0x000000FFU) | \
+        (((n) >>  8) & 0x0000FF00U) | \
+        (((n) <<  8) & 0x00FF0000U) | \
+        (((n) << 24) & 0xFF000000U)   \
+    ) : \
+    (sizeof(n) == 8) ? ( \
+        (((n) >> 56) & 0x00000000000000FFULL) | \
+        (((n) >> 40) & 0x000000000000FF00ULL) | \
+        (((n) >> 24) & 0x0000000000FF0000ULL) | \
+        (((n) >>  8) & 0x00000000FF000000ULL) | \
+        (((n) <<  8) & 0x000000FF00000000ULL) | \
+        (((n) << 24) & 0x0000FF0000000000ULL) | \
+        (((n) << 40) & 0x00FF000000000000ULL) | \
+        (((n) << 56) & 0xFF00000000000000ULL)   \
+    ) : (n)
+
+/**
+ * @brief Funzione per trasformare un numero di 8, 16, 32, 64 bit nell'endianess della macchina
+ * @param n Numero da trasformare
+ * @return Numero trasformato nell'endianess della macchina
+ */
+#define socknet_net2host(n) socknet_host2net(n)
+
+/**
  * @brief Tipo di puntatore a una funzione di callback
  * @param socket Socket del client o server
  * @param ip IP del client o server
@@ -98,5 +131,11 @@ int socknet_accept(socknet_server *server, socknet_callback callback);
  * @return Codice di ritorno
  */
 int socknet_connect(const char *ip, int port, socknet_callback callback, void *user);
+
+/**
+ * @brief Funzione per riconoscere l'endianess della macchina
+ * @return 1 se e' little endian 0 se e' big endian
+ */
+int socknet_islittleen(void);
 
 #endif

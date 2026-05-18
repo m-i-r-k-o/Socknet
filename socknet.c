@@ -401,3 +401,8 @@ int socknet_connect(const char *ip, int port, socknet_callback callback, void *u
     fclose(server);
     return err;
 }
+
+int socknet_islittleen(void) {
+    uint16_t x = 1;
+    return *(uint8_t*)&x == 1;
+}
