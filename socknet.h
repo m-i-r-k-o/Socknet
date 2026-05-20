@@ -32,14 +32,14 @@
 /**
  * @brief Codice di successo di una funzione
  */
-#define SOCKNET_OK 1
+#define SOCKNET_OK 0
 #endif
 
 #ifndef SOCKNET_NO
 /**
  * @brief Codice di fallimento di una funzione
  */
-#define SOCKNET_NO 0
+#define SOCKNET_NO 1
 #endif
 
 /**
