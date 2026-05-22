@@ -15,7 +15,7 @@
 #include <sys/mman.h>
 
 /**
- * @brief Tempo di attesa della poll
+ * @brief Poll waiting time
  */
 #define SOCKNET_POLL_WAIT 100
 
@@ -29,50 +29,50 @@ typedef struct {
 
 struct socknet_server {
     int fd; /**< File descriptor del server */
-    size_t nclients; /**< Grandezza della coda di clients */
+    size_t nclients; /**< Size of the client queue */
     socknet_shared_header *header;
-    pid_t *pidvec; /**< Vettore di pid dei processi per gestire i client */
-    size_t pidcnt; /**< Numero di porocessi aperti */
-    size_t pidsiz; /**< Grandezza allocata del vettore di pid */
+    pid_t *pidvec; /**< Process pid vector to manage clients */
+    size_t pidcnt; /**< Number of open processes */
+    size_t pidsiz; /**< Allocated quantity of the pid vector */
 };
 
 /**
- * @brief Socket unico per ogni processo figlio (client)
+ * @brief Unique socket for each child process (client)
  */
 static FILE *child_client_socket = NULL;
 
 /**
- * @brief Funzione per terminare il client alla chiusura del server
- * @param sig Numero signal che dovrebbe essere SIGTERM
+ * @brief Function to terminate the client when the server closes
+ * @param sig Signal number which should be SIGTERM
  */
 static void socknet_sigterm_client(int sig) {
     (void)(sig);
 
-    /** Se il socket de client e' valido invia gli ultimi dati e chiudilo */
+    /** If the client socket is valid send the last data and close it */
     if(child_client_socket) {
         shutdown(fileno(child_client_socket), SHUT_WR);
         fclose(child_client_socket);
     }
 
-    /** Esco dal processo */
+    /** I'm leaving the trial */
     _exit(EXIT_SUCCESS);
 }
 
 /**
- * @brief Permette di fare bind ad un server inserendo un tipo di IP diretto
- * @param fd File descriptor del server
- * @param port Porta del server
- * @param type Tipo di IP del server
- * @return Codice di ritorno
+ * @brief Allows you to bind to a server by entering a direct IP type
+ * @param fd Server descriptor file
+ * @param port Server port
+ * @param type Server IP type
+ * @return Return code
  */
 static int socknet_direct_bind(int fd, int port, in_addr_t type) {
-    /** Creo la struttura dell'indirizzo */
+    /** I create the address structure */
     struct sockaddr_in addr;
-    addr.sin_family = AF_INET; /** IPv4 */
-    addr.sin_port = htons(port); /** Trasformo la porta nell'endianess del network */
-    addr.sin_addr.s_addr = type; /** Inserisco il tipo di IP */
+    addr.sin_family = AF_INET; /** I pv4 */
+    addr.sin_port = htons(port); /** I transform the port into the endianess of the network */
+    addr.sin_addr.s_addr = type; /** I enter the IP type */
 
-    /** Eseguo il bind con l'indirizzo precedentemente creato */
+    /** I bind with the previously created address */
     if(bind(fd, (void*)(&addr), sizeof(addr)) < 0) {
         return SOCKNET_NO;
     }
@@ -81,24 +81,24 @@ static int socknet_direct_bind(int fd, int port, in_addr_t type) {
 }
 
 /**
- * @brief Permette di fare bind ad un server inserendo ip e porta
- * @param fd File descriptor del server
- * @param ip IP del server
- * @param port Porta del server
- * @return Codice di ritorno
+ * @brief Allows you to bind to a server by entering IP and port
+ * @param fd Server descriptor file
+ * @param ip Server IP
+ * @param port Server port
+ * @return Return code
  */
 static int socknet_ip_bind(int fd, const char *ip, int port) {
-    /** Creo la struttura dell'indirizzo */
+    /** I create the address structure */
     struct sockaddr_in addr;
-    addr.sin_family = AF_INET; /** IPv4 */
-    addr.sin_port = htons(port); /** Trasformo la porta nell'endianess del network */
+    addr.sin_family = AF_INET; /** I pv4 */
+    addr.sin_port = htons(port); /** I transform the port into the endianess of the network */
 
-    /** Inserisco l'IP del server */
+    /** I enter the server IP */
     if(inet_pton(AF_INET, ip, &addr.sin_addr) <= 0) {
         return SOCKNET_NO;
     }
 
-    /** Eseguo il bind con l'indirizzo precedentemente creato */
+    /** I bind with the previously created address */
     if(bind(fd, (void*)(&addr), sizeof(addr)) < 0) {
         return SOCKNET_NO;
     }
@@ -107,24 +107,24 @@ static int socknet_ip_bind(int fd, const char *ip, int port) {
 }
 
 /** 
- * @brief Permette di connettere un client ad un server
- * @param fd File descriptor del client
- * @param ip IP del server
- * @param port Porta del server
- * @return Codice di ritorno
+ * @brief Allows you to connect a client to a server
+ * @param fd Client file descriptor
+ * @param ip Server IP
+ * @param port Server port
+ * @return Return code
  */
 static int socknet_ip_connect(int fd, const char *ip, int port) {
-    /** Creo la struttura dell'indirizzo */
+    /** I create the address structure */
     struct sockaddr_in addr;
-    addr.sin_family = AF_INET; /** IPv4 */
-    addr.sin_port = htons(port); /** Trasformo la porta nell'endianess del network */
+    addr.sin_family = AF_INET; /** I pv4 */
+    addr.sin_port = htons(port); /** I transform the port into the endianess of the network */
 
-    /** Inserisco l'IP del server */
+    /** I enter the server IP */
     if(inet_pton(AF_INET, ip, &addr.sin_addr) <= 0) {
         return SOCKNET_NO;
     }
 
-    /** Connetto il client all'indirizzo del server */
+    /** I connect the client to the server address */
     if(connect(fd, (void*)(&addr), sizeof(addr)) < 0) {
         return SOCKNET_NO;
     }
@@ -133,9 +133,9 @@ static int socknet_ip_connect(int fd, const char *ip, int port) {
 }
 
 /** 
- * @brief Trasforma una grandezza in una grandezza piu' granda a base 2
- * @param size Grandezza iniziale
- * @return Grandezza piu' grande a base 2
+ * @brief Transform a quantity into a larger quantity with base 2
+ * @param size Initial size
+ * @return Largest quantity at base 2
  */
 static size_t socknet_round_size(size_t size) {
     if(size == 0) return 1;
@@ -151,36 +151,36 @@ static size_t socknet_round_size(size_t size) {
 }
 
 /**
- * @brief Inserisce nella lista dei processi del server un pid
- * @param server Server possessore della lista
- * @param pid Codice del processo da inserire nella lista
- * @return Codice di ritorno
+ * @brief Inserts a pid into the server process list
+ * @param server Server owner of the list
+ * @param pid Process code to insert into the list
+ * @return Return code
  */
 static int socknet_put_pid(socknet_server *server, pid_t pid) {
-    /** Nel caso la lista sia piena riallochiamola */
+    /** If the list is full, let's reallocate it */
     if(server->pidcnt >= server->pidsiz) {
-        /** Ingrandisco la grandezza massima */
+        /** I enlarge the maximum size */
         size_t newsiz = socknet_round_size(server->pidsiz);
 
-        /** Creo una nuova lista */
+        /** I create a new list */
         pid_t *newvec = SOCKNET_MALLOC(newsiz * sizeof(pid_t));
         if(!newvec) return SOCKNET_NO;
 
-        /** Inizializzo a 0 la lista */
+        /** I initialize the list to 0 */
         memset(newvec, 0, newsiz * sizeof(pid_t));
 
-        /** Se c'erano dati precendenti li copio nella nuova lista */
+        /** If there were previous data I copy them into the new list */
         if(server->pidvec) {
             memcpy(newvec, server->pidvec, server->pidcnt);
             SOCKNET_FREE(server->pidvec);
         }
 
-        /** Aggiorno la lista e la grandezza */
+        /** I update the list and size */
         server->pidvec = newvec;
         server->pidsiz = newsiz;
     }
 
-    /** Cerco un pid vuoto o un processo finito e gli inserisco il pid nuovo */
+    /** I look for an empty pid or a finished process and insert the new pid into it */
     for(size_t n = 0; n < server->pidcnt; n++) {
         int curr = server->pidvec[n];
         if(curr <= 0 || waitpid(curr, NULL, WNOHANG)) {
@@ -189,7 +189,7 @@ static int socknet_put_pid(socknet_server *server, pid_t pid) {
         }
     }
 
-    /** Se non ho trovato un pid vuoto ingrandisco la lista */
+    /** If I haven't found an empty pid I enlarge the list */
     server->pidvec[server->pidcnt++] = pid;
     return SOCKNET_OK;
 }
@@ -198,33 +198,33 @@ socknet_server *socknet_create(size_t nclients, const char *ip, int port) {
     socknet_server *server = SOCKNET_MALLOC(sizeof(socknet_server));
     if(!server) return NULL;
 
-    /** Creo un nuovo socket */
+    /** I create a new socket */
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if(fd < 0) {
         SOCKNET_FREE(server);
         return NULL;
     }
 
-    /** Se non e' specificato un IP accetto ogni indirizzo */
+    /** If an IP is not specified I accept any address */
     int res = SOCKNET_OK;
     if(!ip) res = socknet_direct_bind(fd, port, INADDR_ANY);
     else res = socknet_ip_bind(fd, ip, port);
 
-    /** In caso di errore chiudo il socket e mando un codice negativo */
+    /** In case of error I close the socket and send a negative code */
     if(res == SOCKNET_NO) {
         SOCKNET_FREE(server);
         close(fd);
         return NULL;
     }
 
-    /** Metto il server in ascolto */
+    /** I put the server to listen */
     if(listen(fd, (int)(nclients)) < 0) {
         SOCKNET_FREE(server);
         close(fd);
         return NULL;
     }
 
-    /** Inizializzo i dati del server */
+    /** I initialize the server data */
     server->fd = fd;
     server->nclients = nclients;
     server->header = NULL;
@@ -236,7 +236,7 @@ socknet_server *socknet_create(size_t nclients, const char *ip, int port) {
 }
 
 void socknet_close(socknet_server *server) {
-    /** Chiudo il socket */
+    /** I close the socket */
     close(server->fd);
 
     if(server->header) {
@@ -247,18 +247,18 @@ void socknet_close(socknet_server *server) {
         munmap(server->header, total);
     }
 
-    /** Se ci sono processi aperti li chiudo */
+    /** If there are open processes I close them */
     if(server->pidvec) {
         for(size_t n = 0; n < server->pidcnt; n++) {
-            /** Se il processo non e' valido saltalo */
+            /** If the process is invalid, skip it */
             if(server->pidvec[n] <= 0) continue;
 
-            /** Chiedo al processo di chiudersi e lo aspetto */
+            /** I ask the process to close and wait for it */
             kill(server->pidvec[n], SIGTERM);
             waitpid(server->pidvec[n], NULL, 0);
         }
         
-        /** Libero la memoria del vettore di processi */
+        /** Free the memory of the process vector */
         SOCKNET_FREE(server->pidvec);
     }
 
@@ -316,123 +316,123 @@ void socknet_unlock(void *shared) {
 }
 
 int socknet_accept(socknet_server *server, socknet_callback callback) {
-    /** Creo una poll per gestire il tempo di block di accept */
+    /** I create a poll to manage the accept block time */
     struct pollfd pfd;
     pfd.fd = server->fd;
     pfd.events = POLLIN;
 
-    /** Controllo se un client vuole connettersi */
+    /** Check if a client wants to connect */
     int res = poll(&pfd, 1, 100);
     if(res == 0) return SOCKNET_OK;
 
-    /** Errore della poll */
+    /** Poll error */
     if(res < 0) {
         if(errno == EINTR) return SOCKNET_OK;
         return SOCKNET_NO;
     }
 
-    /** Creo la struttura di indirizzo per il client */
+    /** I create the address structure for the client */
     struct sockaddr_in addr;
     socklen_t len = sizeof(addr);
 
-    /** Accetto il client */
+    /** I accept the client */
     int fd = accept(server->fd, (void*)(&addr), &len);
     if(fd < 0) return SOCKNET_NO;
 
-    /** Eseguo un nuovo processo per gestire il client */
+    /** I run a new process to handle the client */
     pid_t pid = fork();
 
-    /** Errore del fork */
+    /** Fork error */
     if(pid < 0) {
         close(fd);
         return SOCKNET_NO;
     }
 
-    /** Se e' il processo figlio */
+    /** If it is the child process */
     else if(pid == 0) {
-        /** Trasformo l'ip in una stringa leggibile */
+        /** I transform the ip into a readable string */
         char ip[INET_ADDRSTRLEN];
         if(!inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip))) {
             close(fd);
             _exit(EXIT_FAILURE);
         }
 
-        /** Trasformo il socket da file descriptor a file per comodita' */
+        /** I transform the socket from file descriptor to file for convenience */
         FILE *client = fdopen(fd, "a+");
         if(!client) {
             close(fd);
             _exit(EXIT_FAILURE);
         }
 
-        /** Rimuovo il buffering del file per evitare problemi con l'invio dei dati */
+        /** I remove file buffering to avoid problems with sending data */
         if(setvbuf(client, NULL, _IONBF, 0) != 0) {
             fclose(client);
             _exit(EXIT_FAILURE);
         }
 
-        /** Salvo il socket nella variabile globale del processo */
+        /** I save the socket in the global process variable */
         child_client_socket = client;
 
-        /** Inserisco che alla richiesta di chiusura del server termina il socknet del client */
+        /** I insert that the client's socknet ends when the server is closed */
         struct sigaction sa;
         sa.sa_handler = socknet_sigterm_client;
         sigemptyset(&sa.sa_mask);
         sa.sa_flags = 0;
         sigaction(SIGTERM, &sa, NULL);
 
-        /** Eseguo le operazioni di comunicazione con il client */
+        /** I perform communication operations with the client */
         int res = callback(client, ip, (int)(ntohs(addr.sin_port)), server->header->shared);
 
-        /** Invio gli ultimi dati del socket */
+        /** Sending the latest socket data */
         shutdown(fileno(client), SHUT_WR);
-        fclose(client); /** Chiudo il socket */
+        fclose(client); /** I close the socket */
 
-        /** Chiudo il processo con uno stato positivo o negativo in base all'operazione */
+        /** I close the process with a positive or negative status depending on the operation */
         int status = EXIT_SUCCESS;
         if(res == SOCKNET_NO) status = EXIT_FAILURE;
         _exit(status);
     }
 
-    /** Se e' il processo padre */
+    /** If it is the parent process */
     else {
-        /** Aggiungi il pid del processo figlio nella lista */
+        /** Add the pid of the child process into the list */
         int res = socknet_put_pid(server, pid);
-        close(fd); /** Chiudi il socket */
-        return res; /** Ritorna il codice di errore */
+        close(fd); /** Close the socket */
+        return res; /** The error code returns */
     }
 
     return SOCKNET_OK;
 }
 
 int socknet_connect(const char *ip, int port, socknet_callback callback, void *user) {
-    /** Creo il socket del server */
+    /** I create the server socket */
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if(fd < 0) return SOCKNET_NO;
 
-    /** Connetto il socket all'ip e alla porta */
+    /** I connect the socket to the IP and the port */
     int res = socknet_ip_connect(fd, ip, port);
     if(res == SOCKNET_NO) {
         close(fd);
         return SOCKNET_NO;
     }
 
-    /** Trasformo di file descriptor in un file per comodita' */
+    /** Transforming file descriptor into a file for convenience */
     FILE *server = fdopen(fd, "a+");
     if(!server) {
         close(fd);
         return SOCKNET_NO;
     }
 
-    /** Rimuovo il buffering del file per evitare problemi con l'invio dei dati */
+    /** I remove file buffering to avoid problems with sending data */
     if(setvbuf(server, NULL, _IONBF, 0) != 0) {
         fclose(server);
         return SOCKNET_NO;
     }
 
-    /** Comunico con il server */
+    /** I communicate with the server */
     int err = callback(server, ip, port, user);
 
-    /** Chiudo il socket e ritorno il codice di errore */
+    /** I close the socket and return the error code */
     fclose(server);
     return err;
 }
